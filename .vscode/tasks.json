@@ -1,0 +1,66 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "1. Start Emulator",
+      "type": "shell",
+      "command": "\"C:/Users/ADMIN/AppData/Local/Android/Sdk/emulator/emulator\" -avd Medium_Phone_API_36.0 -no-snapshot-load",
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": { "regexp": "." },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Android emulator version",
+          "endsPattern": "Boot completed"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "emulator"
+      }
+    },
+    {
+      "label": "2. Build & Run App",
+      "type": "shell",
+      "command": "./gradlew installDebug && \"C:/Users/ADMIN/AppData/Local/Android/Sdk/platform-tools/adb\" shell am start -n com.wardrobescan.app/.MainActivity",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "build"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "3. Start Emulator + Run App",
+      "dependsOrder": "sequence",
+      "dependsOn": ["1. Start Emulator", "2. Build & Run App"],
+      "problemMatcher": []
+    },
+    {
+      "label": "4. View App Logs",
+      "type": "shell",
+      "command": "\"C:/Users/ADMIN/AppData/Local/Android/Sdk/platform-tools/adb\" logcat --pid=$(\"C:/Users/ADMIN/AppData/Local/Android/Sdk/platform-tools/adb\" shell pidof com.wardrobescan.app)",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "logs"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "5. Clean Build",
+      "type": "shell",
+      "command": "./gradlew clean",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

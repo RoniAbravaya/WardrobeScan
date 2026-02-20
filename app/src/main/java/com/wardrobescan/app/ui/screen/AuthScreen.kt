@@ -1,5 +1,8 @@
 package com.wardrobescan.app.ui.screen
 
+import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -15,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -24,19 +28,49 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 import com.wardrobescan.app.ui.viewmodel.AuthViewModel
 
 @Composable
 fun AuthScreen(
-    onGoogleSignIn: () -> Unit,
+    onGoogleSignIn: () -> Unit = {},
     viewModel: AuthViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+
+    // Build GoogleSignInClient once, scoped to this composable
+    val googleSignInClient = remember {
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken("273168009100-stpb1lh864uqu3ifvb9rvgto3n06tht6.apps.googleusercontent.com")
+            .requestEmail()
+            .build()
+        GoogleSignIn.getClient(context, gso)
+    }
+
+    // Activity result launcher that receives the chosen Google account
+    val googleLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+            try {
+                val account = task.getResult(ApiException::class.java)
+                account.idToken?.let { token ->
+                    viewModel.signInWithGoogle(token)
+                }
+            } catch (e: ApiException) {
+                // sign-in cancelled or failed — error surfaced via viewModel state
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -64,14 +98,24 @@ fun AuthScreen(
 
         Spacer(modifier = Modifier.height(48.dp))
 
-        // Google Sign-In button
+        // Google Sign-In button — launches real Google account picker
         OutlinedButton(
-            onClick = onGoogleSignIn,
+            onClick = {
+                // Sign out first so the account picker always shows
+                googleSignInClient.signOut().addOnCompleteListener {
+                    googleLauncher.launch(googleSignInClient.signInIntent)
+                }
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
-            shape = MaterialTheme.shapes.large
+            shape = MaterialTheme.shapes.large,
+            enabled = !state.isLoading
         ) {
+            if (state.isLoading) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+            }
             Text("Sign in with Google", style = MaterialTheme.typography.titleSmall)
         }
 

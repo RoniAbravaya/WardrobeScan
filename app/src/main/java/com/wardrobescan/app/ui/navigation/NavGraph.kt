@@ -1,6 +1,7 @@
 package com.wardrobescan.app.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -63,10 +64,13 @@ fun NavGraph() {
                 }
             )
 
-            // Auto-navigate when authenticated
-            if (authState.isAuthenticated) {
-                navController.navigate(Routes.HOME) {
-                    popUpTo(Routes.AUTH) { inclusive = true }
+            // Use LaunchedEffect so navigation only fires once when auth state changes,
+            // not on every recomposition (which caused the infinite loop).
+            LaunchedEffect(authState.isAuthenticated) {
+                if (authState.isAuthenticated) {
+                    navController.navigate(Routes.HOME) {
+                        popUpTo(Routes.AUTH) { inclusive = true }
+                    }
                 }
             }
         }

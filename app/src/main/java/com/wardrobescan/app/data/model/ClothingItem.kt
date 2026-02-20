@@ -2,6 +2,7 @@ package com.wardrobescan.app.data.model
 
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
+import com.google.firebase.firestore.Exclude
 import com.google.firebase.firestore.ServerTimestamp
 
 data class ClothingItem(
@@ -25,6 +26,7 @@ data class ClothingItem(
     @ServerTimestamp
     val updatedAt: Timestamp? = null
 ) {
+    @get:Exclude
     val categoryEnum: ClothingCategory?
         get() = ClothingCategory.fromString(category)
 }
