@@ -37,11 +37,9 @@ class ClothingAnalyzer @Inject constructor(
      * but the caller should prompt the user to confirm.
      */
     suspend fun analyze(bitmap: Bitmap): Result<SegmentedResult> {
-        // Step 1: Segment
+        // Step 1: Segment (falls back to original bitmap if MediaPipe native lib unavailable)
         val segmentResult = imageSegmenter.segmentClothing(bitmap)
-        val cutoutBitmap = segmentResult.getOrElse { e ->
-            return Result.failure(Exception("Segmentation failed: ${e.message}", e))
-        }
+        val cutoutBitmap = segmentResult.getOrElse { bitmap }
 
         // Step 2: Label the cutout
         val inputImage = InputImage.fromBitmap(cutoutBitmap, 0)

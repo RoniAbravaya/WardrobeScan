@@ -12,6 +12,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.wardrobescan.app.ui.screen.*
 import com.wardrobescan.app.ui.viewmodel.AuthViewModel
+import com.wardrobescan.app.ui.viewmodel.BulkScanViewModel
 import com.wardrobescan.app.ui.viewmodel.SettingsViewModel
 
 object Routes {
@@ -27,6 +28,14 @@ object Routes {
     fun itemDetail(itemId: String) = "item/$itemId"
 }
 
+/**
+ * Root navigation graph for the application.
+ *
+ * [bulkScanViewModel] is obtained once at this level so the **same instance** is
+ * shared between ScanScreen (stage 1 — captures) and WardrobeScreen (stage 2 — processing).
+ * Hilt scopes it to the activity's [ViewModelStore][androidx.lifecycle.ViewModelStore],
+ * which persists for the full authenticated session.
+ */
 @Composable
 fun NavGraph() {
     val navController = rememberNavController()
@@ -34,6 +43,10 @@ fun NavGraph() {
     val authState by authViewModel.uiState.collectAsStateWithLifecycle()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val settingsState by settingsViewModel.uiState.collectAsStateWithLifecycle()
+
+    // Shared across ScanScreen and WardrobeScreen — must be obtained outside any
+    // composable {} block so it is scoped to the NavGraph composable's owner (the activity).
+    val bulkScanViewModel: BulkScanViewModel = hiltViewModel()
 
     val startDestination = when {
         !settingsState.onboardingComplete -> Routes.ONBOARDING
@@ -101,7 +114,17 @@ fun NavGraph() {
 
         composable(Routes.SCAN) {
             ScanScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onDone = {
+                    // Move pending captures into the processing pipeline, then navigate.
+                    // By the time WardrobeScreen composes, processingItems is already populated.
+                    bulkScanViewModel.startProcessing()
+                    navController.navigate(Routes.WARDROBE) {
+                        popUpTo(Routes.HOME)
+                        launchSingleTop = true
+                    }
+                },
+                bulkScanViewModel = bulkScanViewModel
             )
         }
 
@@ -128,7 +151,8 @@ fun NavGraph() {
                         launchSingleTop = true
                     }
                 },
-                onNavigateToScan = { navController.navigate(Routes.SCAN) }
+                onNavigateToScan = { navController.navigate(Routes.SCAN) },
+                bulkScanViewModel = bulkScanViewModel
             )
         }
 

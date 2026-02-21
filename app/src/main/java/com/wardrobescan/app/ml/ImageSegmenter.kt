@@ -79,8 +79,8 @@ class ImageSegmenter @Inject constructor(
             }
 
             Result.success(output)
-        } catch (e: Exception) {
-            Result.failure(e)
+        } catch (e: Throwable) {
+            Result.failure(Exception(e.message, e))
         }
     }
 
