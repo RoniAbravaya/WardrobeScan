@@ -24,8 +24,20 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.wardrobescan.app.data.model.ClothingCategory
 import com.wardrobescan.app.data.model.ClothingItem
+import com.wardrobescan.app.ui.viewmodel.BulkScanViewModel
 import com.wardrobescan.app.ui.viewmodel.WardrobeViewModel
 
+/**
+ * Main wardrobe screen, showing the user's clothing grid with category filters.
+ *
+ * When batch-captured images are being processed by [bulkScanViewModel], a [ProcessingList]
+ * tray appears at the top of the screen showing a progress card per image. Cards disappear
+ * automatically as each item is saved and surfaces in the Firestore-backed [WardrobeViewModel]
+ * flow below.
+ *
+ * @param bulkScanViewModel Shared instance from NavGraph; exposes [processingItems][com.wardrobescan.app.ui.viewmodel.BulkScanViewModel.processingItems].
+ * @param viewModel         Screen-scoped WardrobeViewModel for the clothing grid and filters.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WardrobeScreen(
@@ -34,9 +46,11 @@ fun WardrobeScreen(
     onNavigateToOutfits: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToScan: () -> Unit,
+    bulkScanViewModel: BulkScanViewModel,
     viewModel: WardrobeViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val processingItems by bulkScanViewModel.processingItems.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -83,7 +97,10 @@ fun WardrobeScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Filter chips
+            // Processing progress tray — only visible when images are being analysed/saved.
+            ProcessingList(items = processingItems)
+
+            // Category filter chips
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -131,7 +148,7 @@ fun WardrobeScreen(
                 ) {
                     CircularProgressIndicator()
                 }
-            } else if (state.filteredItems.isEmpty()) {
+            } else if (state.filteredItems.isEmpty() && processingItems.isEmpty()) {
                 EmptyWardrobeMessage(onScanClick = onNavigateToScan)
             } else {
                 LazyVerticalGrid(
@@ -140,7 +157,8 @@ fun WardrobeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(state.filteredItems) { item ->
+                    // Stable key prevents recomposition of unrelated cards when new items arrive.
+                    items(state.filteredItems, key = { it.id }) { item ->
                         WardrobeItemCard(
                             item = item,
                             onClick = { onNavigateToItem(item.id) }

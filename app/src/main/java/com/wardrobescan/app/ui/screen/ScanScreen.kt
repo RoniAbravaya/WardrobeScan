@@ -1,25 +1,22 @@
 package com.wardrobescan.app.ui.screen
 
+import android.Manifest
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -27,43 +24,120 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.wardrobescan.app.data.model.ClothingCategory
-import com.wardrobescan.app.ui.viewmodel.ScanViewModel
+import com.wardrobescan.app.ui.viewmodel.BulkScanViewModel
 import java.io.File
-import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
+/**
+ * Camera screen for the multi-capture flow.
+ *
+ * The user can take as many photos as they want (via camera shutter or gallery picker).
+ * Captured URIs accumulate in [bulkScanViewModel] without starting any heavy work.
+ * [MultiCaptureControls] appears below the viewfinder once the first image is captured,
+ * showing thumbnails and a "Done — Add to Wardrobe" button. Tapping Done calls [onDone],
+ * which the NavGraph uses to invoke [BulkScanViewModel.startProcessing] then navigate to
+ * WardrobeScreen where progress is displayed.
+ *
+ * Existing navigation behaviour ([onNavigateBack]) is preserved for the back button.
+ *
+ * @param onNavigateBack    Pops the back stack — same behaviour as before.
+ * @param onDone            Triggered when the user taps "Done". The caller is responsible
+ *                          for calling [BulkScanViewModel.startProcessing] and navigating.
+ * @param bulkScanViewModel Shared instance provided by NavGraph; manages captured URIs.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScanScreen(
     onNavigateBack: () -> Unit,
-    viewModel: ScanViewModel = hiltViewModel()
+    onDone: () -> Unit,
+    bulkScanViewModel: BulkScanViewModel
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val capturedUris by bulkScanViewModel.capturedUris.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    var capturedImageUri by remember { mutableStateOf<Uri?>(null) }
+    // Clear any URIs left over from a previous SCAN session (e.g., user backed out
+    // without tapping Done). Runs once per composition — safe to call even when empty.
+    LaunchedEffect(Unit) {
+        bulkScanViewModel.clearPendingUris()
+    }
 
-    LaunchedEffect(state.saved) {
-        if (state.saved) {
-            onNavigateBack()
+    // Navigation trigger flag. Calling navController.navigate() directly inside
+    // onClick can be silently dropped if the NavController is still processing a
+    // lifecycle resume (e.g., returning from the camera-permission dialog or gallery
+    // picker). Deferring to LaunchedEffect ensures the call happens after Compose has
+    // finished its current frame and the NavController is in a navigable state.
+    var triggerDone by remember { mutableStateOf(false) }
+    LaunchedEffect(triggerDone) {
+        if (triggerDone) {
+            onDone()
+            triggerDone = false
         }
+    }
+
+    var cameraGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var showPermissionDialog by remember { mutableStateOf(false) }
+
+    val permLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        cameraGranted = grants[Manifest.permission.CAMERA] == true
+        if (!cameraGranted) showPermissionDialog = true
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        // Wrap the existing onPhotoCaptured pattern — each URI is added individually.
+        uris.forEach { bulkScanViewModel.addCapturedUri(it) }
+    }
+
+    LaunchedEffect(Unit) {
+        val needed = buildList {
+            add(Manifest.permission.CAMERA)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                add(Manifest.permission.READ_MEDIA_IMAGES)
+            else
+                add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        permLauncher.launch(needed.toTypedArray())
+    }
+
+    if (showPermissionDialog) {
+        AlertDialog(
+            onDismissRequest = { showPermissionDialog = false },
+            title = { Text("Camera Required") },
+            text = { Text("Please grant camera access in Settings to scan clothing items.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showPermissionDialog = false
+                    val intent = Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", context.packageName, null)
+                    )
+                    context.startActivity(intent)
+                }) { Text("Open Settings") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPermissionDialog = false }) { Text("Cancel") }
+            }
+        )
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Scan Item") },
+                title = { Text("Scan Items") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
@@ -72,294 +146,70 @@ fun ScanScreen(
             )
         }
     ) { padding ->
-        if (state.capturedBitmap == null) {
-            // Camera view
-            CameraView(
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            // Camera viewfinder — expands to fill available space above the controls tray.
+            Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                onPhotoCaptured = { bitmap, uri ->
-                    capturedImageUri = uri
-                    viewModel.onPhotoCaptured(bitmap)
-                }
-            )
-        } else {
-            // Analysis / Edit view
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .verticalScroll(rememberScrollState())
+                    .fillMaxWidth()
+                    .weight(1f)
             ) {
-                // Preview images
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Original
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("Original", style = MaterialTheme.typography.labelMedium)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        state.capturedBitmap?.let {
-                            Image(
-                                bitmap = it.asImageBitmap(),
-                                contentDescription = "Captured",
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(12.dp))
+                if (cameraGranted) {
+                    CameraView(
+                        onPhotoCaptured = { uri ->
+                            // Wrap onPhotoCaptured: add to the pending list instead of
+                            // triggering immediate analysis (as in the old single-scan flow).
+                            bulkScanViewModel.addCapturedUri(uri)
+                        },
+                        onGalleryClick = {
+                            galleryLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                             )
                         }
-                    }
-
-                    // Cutout
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("Cutout", style = MaterialTheme.typography.labelMedium)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        if (state.isAnalyzing) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(1f),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator()
-                            }
-                        } else {
-                            state.cutoutBitmap?.let {
-                                Image(
-                                    bitmap = it.asImageBitmap(),
-                                    contentDescription = "Cutout",
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .aspectRatio(1f)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                                )
-                            }
+                    )
+                } else {
+                    NoCameraPermissionPlaceholder(
+                        onRequestPermission = {
+                            permLauncher.launch(arrayOf(Manifest.permission.CAMERA))
                         }
-                    }
+                    )
                 }
+            }
 
-                // Error
-                state.error?.let { error ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(error, color = MaterialTheme.colorScheme.onErrorContainer)
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
+            // Thumbnail tray + Done button — visible once at least one photo is captured.
+            MultiCaptureControls(
+                capturedUris = capturedUris,
+                onRemoveUri = { bulkScanViewModel.removeCapturedUri(it) },
+                onDone = onDone
+            )
+        }
+    }
+}
 
-                // Analysis results
-                AnimatedVisibility(visible = state.analysisResult != null) {
-                    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        // Category selector
-                        Text(
-                            "Category",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        if (state.needsManualCategory) {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                                )
-                            ) {
-                                Text(
-                                    "Low confidence — please select the correct category",
-                                    modifier = Modifier.padding(12.dp),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Category chips
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            ClothingCategory.entries.take(3).forEach { category ->
-                                FilterChip(
-                                    selected = state.selectedCategory == category,
-                                    onClick = { viewModel.onCategorySelected(category) },
-                                    label = { Text(category.displayName, style = MaterialTheme.typography.labelSmall) }
-                                )
-                            }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            ClothingCategory.entries.drop(3).forEach { category ->
-                                FilterChip(
-                                    selected = state.selectedCategory == category,
-                                    onClick = { viewModel.onCategorySelected(category) },
-                                    label = { Text(category.displayName, style = MaterialTheme.typography.labelSmall) }
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Detected labels
-                        Text(
-                            "Detected Labels",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            state.analysisResult?.labels?.take(5)?.forEach { label ->
-                                SuggestionChip(
-                                    onClick = {},
-                                    label = { Text(label, style = MaterialTheme.typography.labelSmall) }
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Colors
-                        Text(
-                            "Colors",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            state.analysisResult?.colors?.forEach { color ->
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                try {
-                                                    androidx.compose.ui.graphics.Color(
-                                                        android.graphics.Color.parseColor(color.hex)
-                                                    )
-                                                } catch (e: Exception) {
-                                                    MaterialTheme.colorScheme.surfaceVariant
-                                                }
-                                            )
-                                            .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
-                                    )
-                                    Text(
-                                        color.name,
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
-                                    Text(
-                                        "${color.percentage.toInt()}%",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        // Warmth & waterproof
-                        Text(
-                            "Properties",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Text("Warmth: ${state.warmthScore}/5")
-                        Slider(
-                            value = state.warmthScore.toFloat(),
-                            onValueChange = { viewModel.onWarmthScoreChanged(it.toInt()) },
-                            valueRange = 1f..5f,
-                            steps = 3
-                        )
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = state.waterproof,
-                                onCheckedChange = { viewModel.onWaterproofToggled(it) }
-                            )
-                            Text("Waterproof")
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Notes
-                        OutlinedTextField(
-                            value = state.userNotes,
-                            onValueChange = { viewModel.onNotesChanged(it) },
-                            label = { Text("Notes (optional)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.medium,
-                            maxLines = 3
-                        )
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        // Action buttons
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { viewModel.resetScan() },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Retake")
-                            }
-                            Button(
-                                onClick = { capturedImageUri?.let { viewModel.saveItem(it) } },
-                                modifier = Modifier.weight(1f),
-                                enabled = !state.isSaving
-                            ) {
-                                if (state.isSaving) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        strokeWidth = 2.dp
-                                    )
-                                } else {
-                                    Text("Save Item")
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(32.dp))
-                    }
-                }
+@Composable
+private fun NoCameraPermissionPlaceholder(onRequestPermission: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                Icons.Default.CameraAlt,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                "Camera permission required",
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = onRequestPermission) {
+                Text("Grant Permission")
             }
         }
     }
@@ -368,14 +218,14 @@ fun ScanScreen(
 @Composable
 private fun CameraView(
     modifier: Modifier = Modifier,
-    onPhotoCaptured: (Bitmap, Uri) -> Unit
+    onPhotoCaptured: (Uri) -> Unit,
+    onGalleryClick: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-
     val imageCapture = remember { ImageCapture.Builder().build() }
 
-    Box(modifier = modifier) {
+    Box(modifier = modifier.fillMaxSize()) {
         AndroidView(
             factory = { ctx ->
                 PreviewView(ctx).also { previewView ->
@@ -385,7 +235,6 @@ private fun CameraView(
                         val preview = Preview.Builder().build().also {
                             it.surfaceProvider = previewView.surfaceProvider
                         }
-
                         try {
                             cameraProvider.unbindAll()
                             cameraProvider.bindToLifecycle(
@@ -403,7 +252,7 @@ private fun CameraView(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Capture overlay
+        // Bottom overlay: gallery + capture buttons
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -412,29 +261,47 @@ private fun CameraView(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                "Point at one clothing item",
+                "Point at a clothing item",
                 style = MaterialTheme.typography.titleMedium,
                 color = androidx.compose.ui.graphics.Color.White
             )
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Capture button
-            FilledIconButton(
-                onClick = {
-                    capturePhoto(context, imageCapture) { bitmap, uri ->
-                        onPhotoCaptured(bitmap, uri)
-                    }
-                },
-                modifier = Modifier.size(72.dp),
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(32.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.Default.CameraAlt,
-                    contentDescription = "Capture",
-                    modifier = Modifier.size(32.dp)
-                )
+                // Gallery button
+                FilledTonalIconButton(
+                    onClick = onGalleryClick,
+                    modifier = Modifier.size(52.dp)
+                ) {
+                    Icon(
+                        Icons.Default.PhotoLibrary,
+                        contentDescription = "Import from Gallery",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                // Capture button
+                FilledIconButton(
+                    onClick = {
+                        capturePhoto(context, imageCapture, onPhotoCaptured)
+                    },
+                    modifier = Modifier.size(72.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(
+                        Icons.Default.CameraAlt,
+                        contentDescription = "Capture",
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+
+                // Spacer to balance layout
+                Spacer(modifier = Modifier.size(52.dp))
             }
         }
     }
@@ -443,7 +310,7 @@ private fun CameraView(
 private fun capturePhoto(
     context: Context,
     imageCapture: ImageCapture,
-    onCaptured: (Bitmap, Uri) -> Unit
+    onCaptured: (Uri) -> Unit
 ) {
     val file = File(context.cacheDir, "scan_${System.currentTimeMillis()}.jpg")
     val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
@@ -453,9 +320,7 @@ private fun capturePhoto(
         ContextCompat.getMainExecutor(context),
         object : ImageCapture.OnImageSavedCallback {
             override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-                val uri = Uri.fromFile(file)
-                onCaptured(bitmap, uri)
+                onCaptured(Uri.fromFile(file))
             }
 
             override fun onError(exception: ImageCaptureException) {
