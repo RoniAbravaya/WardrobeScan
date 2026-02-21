@@ -42,8 +42,12 @@ import com.wardrobescan.app.ui.viewmodel.ScanViewModel
 import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+import android.Manifest
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
+import com.google.accompanist.permissions.rememberPermissionState
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun ScanScreen(
     onNavigateBack: () -> Unit,
@@ -53,6 +57,13 @@ fun ScanScreen(
     val context = LocalContext.current
 
     var capturedImageUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraPermission = rememberPermissionState(Manifest.permission.CAMERA)
+
+    LaunchedEffect(Unit) {
+        if (!cameraPermission.status.isGranted) {
+            cameraPermission.launchPermissionRequest()
+        }
+    }
 
     LaunchedEffect(state.saved) {
         if (state.saved) {
@@ -73,16 +84,34 @@ fun ScanScreen(
         }
     ) { padding ->
         if (state.capturedBitmap == null) {
-            // Camera view
-            CameraView(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                onPhotoCaptured = { bitmap, uri ->
-                    capturedImageUri = uri
-                    viewModel.onPhotoCaptured(bitmap)
+            if (cameraPermission.status.isGranted) {
+                // Camera view
+                CameraView(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    onPhotoCaptured = { bitmap, uri ->
+                        capturedImageUri = uri
+                        viewModel.onPhotoCaptured(bitmap)
+                    }
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Default.CameraAlt, "Camera Permission", modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Camera permission is required to scan items.", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { cameraPermission.launchPermissionRequest() }) {
+                        Text("Grant Permission")
+                    }
                 }
-            )
+            }
         } else {
             // Analysis / Edit view
             Column(

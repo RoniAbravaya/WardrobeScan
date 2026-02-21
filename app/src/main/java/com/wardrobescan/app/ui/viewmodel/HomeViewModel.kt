@@ -73,10 +73,21 @@ class HomeViewModel @Inject constructor(
         ) == PackageManager.PERMISSION_GRANTED
 
         if (!hasPermission) {
-            _uiState.value = _uiState.value.copy(
-                locationPermissionNeeded = true,
-                isLoading = false
-            )
+            val prefs = context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            val hasAsked = prefs.getBoolean("has_asked_location", false)
+            
+            if (!hasAsked) {
+                prefs.edit().putBoolean("has_asked_location", true).apply()
+                _uiState.value = _uiState.value.copy(
+                    locationPermissionNeeded = true,
+                    isLoading = false
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    error = "Location permission is required for weather suggestions.",
+                    isLoading = false
+                )
+            }
             return
         }
 
