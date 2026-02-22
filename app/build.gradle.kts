@@ -41,6 +41,17 @@ android {
         }
     }
 
+    // Rename APK output to include version name (e.g. WardrobeScan-debug-v1.0.0.apk)
+    @Suppress("UnstableApiUsage")
+    applicationVariants.configureEach {
+        val vName = versionName
+        val bType = buildType.name
+        outputs.configureEach {
+            val apkOutput = this as? com.android.build.gradle.internal.api.ApkVariantOutputImpl
+            apkOutput?.outputFileName = "WardrobeScan-$bType-v$vName.apk"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -94,7 +105,10 @@ dependencies {
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.functions)
-    implementation(libs.gms.auth)
+    // Credential Manager (Google Sign-In)
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     // ML
     implementation(libs.mlkit.labeling)

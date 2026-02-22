@@ -12,6 +12,8 @@ import com.wardrobescan.app.ui.navigation.NavGraph
 import com.wardrobescan.app.ui.theme.WardrobeScanTheme
 import dagger.hilt.android.AndroidEntryPoint
 
+import com.wardrobescan.app.ui.screen.PopupAnimationDemo
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -23,7 +25,18 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    NavGraph()
+                    PopupAnimationDemo(onClose = {
+                        setContent {
+                            WardrobeScanTheme {
+                                Surface(
+                                    modifier = Modifier.fillMaxSize(),
+                                    color = MaterialTheme.colorScheme.background
+                                ) {
+                                    NavGraph()
+                                }
+                            }
+                        }
+                    })
                 }
             }
         }

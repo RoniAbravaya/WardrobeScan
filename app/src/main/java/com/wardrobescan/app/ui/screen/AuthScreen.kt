@@ -1,8 +1,5 @@
 package com.wardrobescan.app.ui.screen
 
-import android.app.Activity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -26,12 +23,20 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.ApiException
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.wardrobescan.app.ui.viewmodel.AuthViewModel
+import kotlinx.coroutines.launch
+
+// Web Client ID (type 3) from google-services.json
+private const val WEB_CLIENT_ID =
+    "273168009100-stpb1lh864uqu3ifvb9rvgto3n06tht6.apps.googleusercontent.com"
 
 @Composable
 fun AuthScreen(
@@ -40,34 +45,46 @@ fun AuthScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
 
-    // Build GoogleSignInClient once, scoped to this composable
-    val googleSignInClient = remember {
-        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken("273168009100-stpb1lh864uqu3ifvb9rvgto3n06tht6.apps.googleusercontent.com")
-            .requestEmail()
-            .build()
-        GoogleSignIn.getClient(context, gso)
-    }
+    // CredentialManager is context-aware but doesn't hold Activity reference — safe as remember
+    val credentialManager = remember { CredentialManager.create(context) }
 
-    // Activity result launcher that receives the chosen Google account
-    val googleLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+    /** Launch Google Sign-In via Credential Manager */
+    fun launchGoogleSignIn() {
+        scope.launch {
+            viewModel.setLoading(true)
             try {
-                val account = task.getResult(ApiException::class.java)
-                account.idToken?.let { token ->
-                    viewModel.signInWithGoogle(token)
-                }
-            } catch (e: ApiException) {
-                // sign-in cancelled or failed — error surfaced via viewModel state
+                val googleIdOption = GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(false) // show ALL accounts, not just previously used
+                    .setServerClientId(WEB_CLIENT_ID)
+                    .setAutoSelectEnabled(false)
+                    .build()
+
+                val request = GetCredentialRequest.Builder()
+                    .addCredentialOption(googleIdOption)
+                    .build()
+
+                val result = credentialManager.getCredential(
+                    request = request,
+                    context = context
+                )
+
+                val credential = result.credential
+                val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                viewModel.signInWithGoogle(googleIdTokenCredential.idToken)
+            } catch (e: GetCredentialCancellationException) {
+                // User dismissed the picker — not an error
+                viewModel.setLoading(false)
+            } catch (e: GetCredentialException) {
+                viewModel.setGoogleSignInError(e.message ?: "Google Sign-In failed")
+            } catch (e: Exception) {
+                viewModel.setGoogleSignInError(e.message ?: "Unexpected error")
             }
         }
     }
@@ -98,14 +115,9 @@ fun AuthScreen(
 
         Spacer(modifier = Modifier.height(48.dp))
 
-        // Google Sign-In button — launches real Google account picker
+        // Google Sign-In button — uses Credential Manager
         OutlinedButton(
-            onClick = {
-                // Sign out first so the account picker always shows
-                googleSignInClient.signOut().addOnCompleteListener {
-                    googleLauncher.launch(googleSignInClient.signInIntent)
-                }
-            },
+            onClick = { launchGoogleSignIn() },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),

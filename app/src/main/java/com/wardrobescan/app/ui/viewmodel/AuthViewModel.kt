@@ -82,6 +82,16 @@ class AuthViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(error = null)
     }
 
+    /** Called by AuthScreen to drive loading state from CredentialManager coroutine */
+    fun setLoading(loading: Boolean) {
+        _uiState.value = _uiState.value.copy(isLoading = loading, error = null)
+    }
+
+    /** Called by AuthScreen when CredentialManager itself throws (not Firebase) */
+    fun setGoogleSignInError(message: String) {
+        _uiState.value = _uiState.value.copy(isLoading = false, error = message)
+    }
+
     fun signOut() {
         authRepository.signOut()
     }
