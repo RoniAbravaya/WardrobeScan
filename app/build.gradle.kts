@@ -8,6 +8,7 @@ plugins {
     alias(libs.plugins.hilt)
     alias(libs.plugins.google.services)
     alias(libs.plugins.crashlytics)
+    alias(libs.plugins.kotlin.parcelize)
 }
 
 val localProperties = Properties().apply {
@@ -122,6 +123,16 @@ dependencies {
 
     // Permissions
     implementation(libs.accompanist.permissions)
+
+    // Room
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+    implementation(libs.room.paging)
+
+    // Paging
+    implementation(libs.paging.runtime)
+    implementation(libs.paging.compose)
 
     // Testing
     testImplementation(libs.junit)

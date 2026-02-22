@@ -5,7 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -21,6 +20,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.paging.LoadState
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
 import coil.compose.AsyncImage
 import com.wardrobescan.app.data.model.ClothingCategory
 import com.wardrobescan.app.data.model.ClothingItem
@@ -37,6 +40,13 @@ fun WardrobeScreen(
     viewModel: WardrobeViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val lazyPagingItems = viewModel.pagingItems.collectAsLazyPagingItems()
+
+    state.error?.let { errorMsg ->
+        LaunchedEffect(errorMsg) {
+            viewModel.clearError()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -114,9 +124,8 @@ fun WardrobeScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Item count
             Text(
-                text = "${state.filteredItems.size} items",
+                text = "${lazyPagingItems.itemCount} items",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp)
@@ -124,28 +133,89 @@ fun WardrobeScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (state.isLoading) {
+            when {
+                lazyPagingItems.loadState.refresh is LoadState.Loading -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+                lazyPagingItems.loadState.refresh is LoadState.Error -> {
+                    val e = (lazyPagingItems.loadState.refresh as LoadState.Error).error
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = e.localizedMessage ?: "Failed to load wardrobe",
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(onClick = { lazyPagingItems.refresh() }) {
+                                Text("Retry")
+                            }
+                        }
+                    }
+                }
+                lazyPagingItems.itemCount == 0 &&
+                    lazyPagingItems.loadState.refresh is LoadState.NotLoading -> {
+                    EmptyWardrobeMessage(onScanClick = onNavigateToScan)
+                }
+                else -> {
+                    WardrobeGrid(
+                        lazyPagingItems = lazyPagingItems,
+                        onNavigateToItem = onNavigateToItem
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WardrobeGrid(
+    lazyPagingItems: LazyPagingItems<ClothingItem>,
+    onNavigateToItem: (String) -> Unit
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        contentPadding = PaddingValues(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        items(
+            count = lazyPagingItems.itemCount,
+            key = lazyPagingItems.itemKey { it.id }
+        ) { index ->
+            val item = lazyPagingItems[index]
+            if (item != null) {
+                WardrobeItemCard(
+                    item = item,
+                    onClick = { onNavigateToItem(item.id) }
+                )
+            } else {
                 Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                )
+            }
+        }
+
+        if (lazyPagingItems.loadState.append is LoadState.Loading) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator()
-                }
-            } else if (state.filteredItems.isEmpty()) {
-                EmptyWardrobeMessage(onScanClick = onNavigateToScan)
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    contentPadding = PaddingValues(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(state.filteredItems) { item ->
-                        WardrobeItemCard(
-                            item = item,
-                            onClick = { onNavigateToItem(item.id) }
-                        )
-                    }
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
                 }
             }
         }

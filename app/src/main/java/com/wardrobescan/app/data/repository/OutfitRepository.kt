@@ -1,5 +1,6 @@
 package com.wardrobescan.app.data.repository
 
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.wardrobescan.app.data.model.Outfit
@@ -12,7 +13,8 @@ import javax.inject.Singleton
 
 @Singleton
 class OutfitRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val crashlytics: FirebaseCrashlytics
 ) {
     private fun outfitsCollection(userId: String) =
         firestore.collection("users").document(userId).collection("outfits")
@@ -51,6 +53,7 @@ class OutfitRepository @Inject constructor(
             val docRef = outfitsCollection(userId).add(outfit.copy(userId = userId)).await()
             Result.success(docRef.id)
         } catch (e: Exception) {
+            crashlytics.recordException(e)
             Result.failure(e)
         }
     }
@@ -60,6 +63,7 @@ class OutfitRepository @Inject constructor(
             outfitsCollection(userId).document(outfit.id).set(outfit).await()
             Result.success(Unit)
         } catch (e: Exception) {
+            crashlytics.recordException(e)
             Result.failure(e)
         }
     }
@@ -69,6 +73,7 @@ class OutfitRepository @Inject constructor(
             outfitsCollection(userId).document(outfitId).delete().await()
             Result.success(Unit)
         } catch (e: Exception) {
+            crashlytics.recordException(e)
             Result.failure(e)
         }
     }

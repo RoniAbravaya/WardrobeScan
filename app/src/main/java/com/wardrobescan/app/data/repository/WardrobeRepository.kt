@@ -1,5 +1,6 @@
 package com.wardrobescan.app.data.repository
 
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.wardrobescan.app.data.model.ClothingItem
@@ -12,7 +13,8 @@ import javax.inject.Singleton
 
 @Singleton
 class WardrobeRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val crashlytics: FirebaseCrashlytics
 ) {
     private fun itemsCollection(userId: String) =
         firestore.collection("users").document(userId).collection("items")
@@ -51,6 +53,7 @@ class WardrobeRepository @Inject constructor(
             val docRef = itemsCollection(userId).add(item.copy(userId = userId)).await()
             Result.success(docRef.id)
         } catch (e: Exception) {
+            crashlytics.recordException(e)
             Result.failure(e)
         }
     }
@@ -60,6 +63,7 @@ class WardrobeRepository @Inject constructor(
             itemsCollection(userId).document(item.id).set(item).await()
             Result.success(Unit)
         } catch (e: Exception) {
+            crashlytics.recordException(e)
             Result.failure(e)
         }
     }
@@ -69,6 +73,7 @@ class WardrobeRepository @Inject constructor(
             itemsCollection(userId).document(itemId).delete().await()
             Result.success(Unit)
         } catch (e: Exception) {
+            crashlytics.recordException(e)
             Result.failure(e)
         }
     }
@@ -79,6 +84,7 @@ class WardrobeRepository @Inject constructor(
             val item = doc.toObject(ClothingItem::class.java)
             if (item != null) Result.success(item) else Result.failure(Exception("Item not found"))
         } catch (e: Exception) {
+            crashlytics.recordException(e)
             Result.failure(e)
         }
     }
