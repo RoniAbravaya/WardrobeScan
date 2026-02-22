@@ -1,6 +1,7 @@
 package com.wardrobescan.app.data.repository
 
 import android.net.Uri
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
@@ -9,7 +10,8 @@ import javax.inject.Singleton
 
 @Singleton
 class StorageRepository @Inject constructor(
-    private val storage: FirebaseStorage
+    private val storage: FirebaseStorage,
+    private val crashlytics: FirebaseCrashlytics
 ) {
     suspend fun uploadOriginalImage(userId: String, imageUri: Uri): Result<String> {
         return uploadImage(userId, "originals", imageUri)
@@ -24,6 +26,7 @@ class StorageRepository @Inject constructor(
             val downloadUrl = ref.downloadUrl.await()
             Result.success(downloadUrl.toString())
         } catch (e: Exception) {
+            crashlytics.recordException(e)
             Result.failure(e)
         }
     }
@@ -37,6 +40,7 @@ class StorageRepository @Inject constructor(
             val downloadUrl = ref.downloadUrl.await()
             Result.success(downloadUrl.toString())
         } catch (e: Exception) {
+            crashlytics.recordException(e)
             Result.failure(e)
         }
     }
@@ -46,6 +50,7 @@ class StorageRepository @Inject constructor(
             storage.getReferenceFromUrl(imageUrl).delete().await()
             Result.success(Unit)
         } catch (e: Exception) {
+            crashlytics.recordException(e)
             Result.failure(e)
         }
     }

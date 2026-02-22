@@ -1,12 +1,17 @@
 package com.wardrobescan.app.di
 
 import android.content.Context
+import androidx.room.Room
 import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.storage.FirebaseStorage
+import com.wardrobescan.app.data.local.AppDatabase
+import com.wardrobescan.app.data.local.dao.ClothingItemDao
+import com.wardrobescan.app.data.local.dao.OutfitDao
 import com.wardrobescan.app.data.remote.WeatherApiService
 import dagger.Module
 import dagger.Provides
@@ -76,4 +81,21 @@ object AppModule {
             .build()
             .create(WeatherApiService::class.java)
     }
+
+    @Provides
+    @Singleton
+    fun provideFirebaseCrashlytics(): FirebaseCrashlytics = FirebaseCrashlytics.getInstance()
+
+    @Provides
+    @Singleton
+    fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
+        Room.databaseBuilder(context, AppDatabase::class.java, "wardrobe_db")
+            .fallbackToDestructiveMigration()
+            .build()
+
+    @Provides
+    fun provideClothingItemDao(db: AppDatabase): ClothingItemDao = db.clothingItemDao()
+
+    @Provides
+    fun provideOutfitDao(db: AppDatabase): OutfitDao = db.outfitDao()
 }
