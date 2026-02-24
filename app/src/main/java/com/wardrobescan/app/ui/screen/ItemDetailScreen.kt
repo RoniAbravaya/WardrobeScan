@@ -200,6 +200,37 @@ fun ItemDetailScreen(
                         Spacer(modifier = Modifier.height(16.dp))
                     }
 
+                    // AI Analysis — populated async by the Claude Vision Cloud Function
+                    if (item.material.isNotEmpty() || item.pattern.isNotEmpty() || item.style.isNotEmpty()) {
+                        Text(
+                            "AI Analysis",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (item.material.isNotEmpty()) {
+                                SuggestionChip(
+                                    onClick = {},
+                                    label = { Text(item.material.replaceFirstChar { it.uppercase() }) }
+                                )
+                            }
+                            if (item.pattern.isNotEmpty()) {
+                                SuggestionChip(
+                                    onClick = {},
+                                    label = { Text(item.pattern.replaceFirstChar { it.uppercase() }) }
+                                )
+                            }
+                            if (item.style.isNotEmpty()) {
+                                SuggestionChip(
+                                    onClick = {},
+                                    label = { Text(item.style.replaceFirstChar { it.uppercase() }) }
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
                     // Properties
                     Text("Properties", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(8.dp))

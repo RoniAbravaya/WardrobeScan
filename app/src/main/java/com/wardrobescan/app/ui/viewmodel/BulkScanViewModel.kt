@@ -7,6 +7,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wardrobescan.app.data.model.ClothingItem
+import com.google.firebase.functions.FirebaseFunctions
 import com.wardrobescan.app.data.repository.AuthRepository
 import com.wardrobescan.app.data.repository.StorageRepository
 import com.wardrobescan.app.data.repository.WardrobeRepository
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.util.UUID
@@ -69,7 +71,8 @@ class BulkScanViewModel @Inject constructor(
     private val storageRepository: StorageRepository,
     private val wardrobeRepository: WardrobeRepository,
     private val authRepository: AuthRepository,
-    private val analytics: Analytics
+    private val analytics: Analytics,
+    private val functions: FirebaseFunctions
 ) : ViewModel() {
 
     /** URIs captured in the camera view, not yet processed (stage 1). */
@@ -194,9 +197,20 @@ class BulkScanViewModel @Inject constructor(
                 confidence = segmented.analysisResult.confidence
             )
 
-            wardrobeRepository.addItem(userId, clothingItem).getOrThrow()
+            val savedItemId = wardrobeRepository.addItem(userId, clothingItem).getOrThrow()
             // Remove the placeholder card; the WardrobeRepository Flow will surface the new item.
             _processingItems.update { current -> current.filter { it.id != id } }
+
+            // Fire-and-forget: Claude Vision enrichment (material, pattern, style).
+            // Runs in background; failure is non-fatal — the item is already saved.
+            viewModelScope.launch {
+                try {
+                    val payload = hashMapOf("itemId" to savedItemId, "userId" to userId)
+                    functions.getHttpsCallable("refineClothingTags").call(payload).await()
+                } catch (_: Exception) {
+                    // Best-effort enrichment — silently ignore failures
+                }
+            }
         } catch (e: Exception) {
             updateItem(id) {
                 it.copy(
