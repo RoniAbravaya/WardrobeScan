@@ -8,5 +8,8 @@
     "functions": {
         "source": "functions",
         "runtime": "nodejs22"
+    },
+    "extensions": {
+        "firestore-bigquery-export": "firebase/firestore-bigquery-export@0.2.8"
     }
 }
