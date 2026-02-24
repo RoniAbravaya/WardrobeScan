@@ -21,6 +21,11 @@ data class ClothingItem(
     val breathable: Boolean = true,
     val userNotes: String = "",
     val confidence: Float = 0f,
+    // Fields populated asynchronously by the refineClothingTags Cloud Function (Claude Vision).
+    // Empty string means not yet analysed.
+    val material: String = "",  // e.g. "cotton", "denim", "wool", "polyester", "leather"
+    val pattern: String = "",   // e.g. "solid", "striped", "floral", "plaid", "graphic"
+    val style: String = "",     // e.g. "casual", "formal", "sporty", "elegant", "streetwear"
     @ServerTimestamp
     val createdAt: Timestamp? = null,
     @ServerTimestamp

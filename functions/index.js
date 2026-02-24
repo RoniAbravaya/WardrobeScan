@@ -7,6 +7,36 @@ const db = admin.firestore();
 const storage = admin.storage();
 
 // ---------------------------------------------------------------------------
+// Image download helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Downloads a URL (Firebase Storage public download URL or any HTTPS URL)
+ * and returns the raw bytes as a Buffer.
+ */
+function downloadUrlToBuffer(url) {
+    return new Promise((resolve, reject) => {
+        const https = require("https");
+        const http = require("http");
+        const client = url.startsWith("https") ? https : http;
+
+        client.get(url, (res) => {
+            if (res.statusCode === 301 || res.statusCode === 302) {
+                // Follow one redirect
+                return downloadUrlToBuffer(res.headers.location).then(resolve).catch(reject);
+            }
+            if (res.statusCode !== 200) {
+                return reject(new Error(`HTTP ${res.statusCode} downloading image`));
+            }
+            const chunks = [];
+            res.on("data", (chunk) => chunks.push(chunk));
+            res.on("end", () => resolve(Buffer.concat(chunks)));
+            res.on("error", reject);
+        }).on("error", reject);
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Persona label sets — derived from existing ML-extracted item labels
 // ---------------------------------------------------------------------------
 const CASUAL_LABELS = new Set([
@@ -444,32 +474,79 @@ exports.refineClothingTags = functions.https.onCall(async (data, context) => {
 
         const item = itemDoc.data();
 
-        // ============================================================
-        // PLACEHOLDER: Replace this section with actual Vertex AI call
-        // ============================================================
-        //
-        // Example with Vertex AI:
-        //
-        // const { PredictionServiceClient } = require('@google-cloud/aiplatform');
-        // const client = new PredictionServiceClient();
-        // const endpoint = `projects/${projectId}/locations/us-central1/endpoints/${endpointId}`;
-        // const imageUrl = item.imageUrl;
-        // const [response] = await client.predict({
-        //   endpoint,
-        //   instances: [{ content: imageUrl }],
-        // });
-        // const refinedLabels = response.predictions.map(p => p.label);
-        //
-        // ============================================================
+        // Choose the best available image: prefer the clean cutout
+        const imageUrl = item.cutoutUrl || item.imageUrl;
+        if (!imageUrl) {
+            throw new functions.https.HttpsError("failed-precondition", "Item has no image URL.");
+        }
 
-        // For MVP, simulate refinement by adding a "refined" flag
+        // Download the image into a buffer
+        const imageBuffer = await downloadUrlToBuffer(imageUrl);
+        const base64Image = imageBuffer.toString("base64");
+        const mediaType = (item.cutoutUrl || "").endsWith(".png") ? "image/png" : "image/jpeg";
+
+        // Call Claude Haiku for structured clothing analysis
+        const Anthropic = require("@anthropic-ai/sdk");
+        const anthropicClient = new Anthropic.default({
+            apiKey: process.env.ANTHROPIC_API_KEY,
+        });
+
+        const ANALYSIS_PROMPT =
+            `Analyze this clothing item image. Return ONLY a valid JSON object — ` +
+            `no markdown, no extra text — with exactly these fields:\n` +
+            `{\n` +
+            `  "category": "top|bottom|outerwear|dress|shoes|accessory",\n` +
+            `  "subcategory": "specific item type, e.g. hoodie / skinny jeans / chelsea boot",\n` +
+            `  "material": "primary material, e.g. cotton / denim / wool / polyester / leather / silk / linen / fleece",\n` +
+            `  "pattern": "solid|striped|plaid|floral|graphic|animal print|geometric|tie-dye|checkered|camo",\n` +
+            `  "style": "casual|formal|sporty|elegant|streetwear|business casual",\n` +
+            `  "confidence": 0.95\n` +
+            `}`;
+
+        const claudeResponse = await anthropicClient.messages.create({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 256,
+            messages: [{
+                role: "user",
+                content: [
+                    {
+                        type: "image",
+                        source: { type: "base64", media_type: mediaType, data: base64Image },
+                    },
+                    { type: "text", text: ANALYSIS_PROMPT },
+                ],
+            }],
+        });
+
+        const responseText = claudeResponse.content[0].text.trim();
+        let analysis;
+        try {
+            // Strip markdown code fences if Claude adds them despite instructions
+            const jsonText = responseText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+            analysis = JSON.parse(jsonText);
+        } catch (parseErr) {
+            console.error("Claude response parse failed:", responseText);
+            throw new functions.https.HttpsError("internal", "Failed to parse Claude response.");
+        }
+
+        // Build the update — always set material/pattern/style; upgrade category/subcategory
+        // only when Claude's confidence exceeds what the on-device model produced.
+        const existingConfidence = item.confidence || 0;
+        const claudeConfidence = typeof analysis.confidence === "number" ? analysis.confidence : 0;
+
         const refinedData = {
+            material: analysis.material || "",
+            pattern: analysis.pattern || "",
+            style: analysis.style || "",
             refined: true,
             refinedAt: admin.firestore.FieldValue.serverTimestamp(),
-            // In production, update labels and category from AI response:
-            // labels: refinedLabels,
-            // category: refinedCategory,
         };
+
+        if (claudeConfidence > existingConfidence && analysis.category) {
+            refinedData.category = analysis.category;
+            if (analysis.subcategory) refinedData.subcategory = analysis.subcategory;
+            refinedData.confidence = claudeConfidence;
+        }
 
         await itemRef.update(refinedData);
 
@@ -477,6 +554,9 @@ exports.refineClothingTags = functions.https.onCall(async (data, context) => {
             success: true,
             message: "Tags refined successfully.",
             itemId: itemId,
+            material: refinedData.material,
+            pattern: refinedData.pattern,
+            style: refinedData.style,
         };
     } catch (error) {
         if (error instanceof functions.https.HttpsError) {
