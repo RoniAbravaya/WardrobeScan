@@ -31,6 +31,7 @@ data class OnboardingPage(
 
 @Composable
 fun OnboardingScreen(
+    onConsentDecided: (Boolean) -> Unit,
     onComplete: () -> Unit
 ) {
     val pages = listOf(
@@ -53,6 +54,39 @@ fun OnboardingScreen(
 
     val pagerState = rememberPagerState(pageCount = { pages.size })
     val scope = rememberCoroutineScope()
+    var showConsentDialog by remember { mutableStateOf(false) }
+
+    if (showConsentDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showConsentDialog = false
+                onConsentDecided(false)
+                onComplete()
+            },
+            title = { Text("Personalise Your Experience") },
+            text = {
+                Text("Allow WardrobeScan to analyse your wardrobe style to suggest relevant clothing trends. You can change this at any time in Settings.")
+            },
+            confirmButton = {
+                Button(onClick = {
+                    showConsentDialog = false
+                    onConsentDecided(true)
+                    onComplete()
+                }) {
+                    Text("Allow")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showConsentDialog = false
+                    onConsentDecided(false)
+                    onComplete()
+                }) {
+                    Text("No thanks")
+                }
+            }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -125,7 +159,7 @@ fun OnboardingScreen(
             exit = fadeOut()
         ) {
             Button(
-                onClick = onComplete,
+                onClick = { showConsentDialog = true },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
@@ -144,7 +178,10 @@ fun OnboardingScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                TextButton(onClick = onComplete) {
+                TextButton(onClick = {
+                    onConsentDecided(false)
+                    onComplete()
+                }) {
                     Text("Skip")
                 }
                 FloatingActionButton(

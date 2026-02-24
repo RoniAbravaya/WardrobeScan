@@ -60,6 +60,9 @@ fun NavGraph() {
     ) {
         composable(Routes.ONBOARDING) {
             OnboardingScreen(
+                onConsentDecided = { optIn ->
+                    settingsViewModel.setMarketingConsent(optIn)
+                },
                 onComplete = {
                     settingsViewModel.completeOnboarding()
                     navController.navigate(Routes.AUTH) {

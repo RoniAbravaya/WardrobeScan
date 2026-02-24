@@ -178,6 +178,22 @@ fun SettingsScreen(
                             Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
                         }
                     )
+
+                    HorizontalDivider()
+
+                    ListItem(
+                        headlineContent = { Text("Style Analysis") },
+                        supportingContent = { Text("Allow wardrobe data to be used for personalised trend suggestions") },
+                        leadingContent = {
+                            Icon(Icons.Default.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary)
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = state.marketingOptIn ?: false,
+                                onCheckedChange = { viewModel.setMarketingConsent(it) }
+                            )
+                        }
+                    )
                 }
             }
 
