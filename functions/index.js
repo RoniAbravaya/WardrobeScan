@@ -560,7 +560,7 @@ exports.refineClothingTags = onCall({ secrets: ["ANTHROPIC_API_KEY"] }, async (r
             style: refinedData.style,
         };
     } catch (error) {
-        if (error instanceof functions.https.HttpsError) {
+        if (error instanceof HttpsError) {
             throw error;
         }
         console.error("Error refining tags:", error);
