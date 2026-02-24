@@ -46,4 +46,19 @@ class Analytics @Inject constructor(
             param("rating", rating.toLong())
         }
     }
+
+    /** User responded to the marketing consent prompt. */
+    fun marketingConsentGiven(optIn: Boolean) {
+        firebaseAnalytics.logEvent("marketing_consent_given") {
+            param("opt_in", if (optIn) 1L else 0L)
+        }
+    }
+
+    /** User's StyleProfile was read by the app (e.g. for a future in-app personalisation feature). */
+    fun styleProfileViewed(primaryPersona: String, segmentCount: Int) {
+        firebaseAnalytics.logEvent("style_profile_viewed") {
+            param("primary_persona", primaryPersona)
+            param("segment_count", segmentCount.toLong())
+        }
+    }
 }

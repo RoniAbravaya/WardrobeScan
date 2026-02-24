@@ -14,6 +14,15 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+// selfie_multiclass_256x256 category indices
+private const val CATEGORY_CLOTHES = 4
+private const val CATEGORY_OTHER_ACCESSORIES = 5
+
+// Minimum clothing pixels required to use the segmented cutout.
+// Below this threshold we fall back to the full original bitmap (handles
+// flat-lay photos where the selfie model finds no foreground person).
+private const val MIN_CLOTHING_PIXELS = 500
+
 @Singleton
 class ImageSegmenter @Inject constructor(
     @ApplicationContext private val context: Context
@@ -69,8 +78,9 @@ class ImageSegmenter @Inject constructor(
 
                     val categoryValue = maskBuffer.get(maskIndex).toInt() and 0xFF
 
-                    // Category 0 = background; keep everything else (clothing/person regions)
-                    if (categoryValue != 0) {
+                    // Keep only clothes (4) and accessories (5); discard hair, skin, background.
+                    // This produces a clean clothing-only cutout rather than a full-silhouette one.
+                    if (categoryValue == CATEGORY_CLOTHES || categoryValue == CATEGORY_OTHER_ACCESSORIES) {
                         output.setPixel(x, y, bitmap.getPixel(x, y))
                     } else {
                         output.setPixel(x, y, Color.TRANSPARENT)
@@ -78,7 +88,20 @@ class ImageSegmenter @Inject constructor(
                 }
             }
 
-            Result.success(output)
+            // Fallback: if the model found very few clothing pixels (e.g. a flat-lay photo
+            // where there is no person), return the original bitmap so the image is not lost.
+            var clothingPixelCount = 0
+            outer@ for (py in 0 until output.height) {
+                for (px in 0 until output.width) {
+                    if (Color.alpha(output.getPixel(px, py)) > 0) {
+                        clothingPixelCount++
+                        if (clothingPixelCount >= MIN_CLOTHING_PIXELS) break@outer
+                    }
+                }
+            }
+            val finalBitmap = if (clothingPixelCount >= MIN_CLOTHING_PIXELS) output else bitmap
+
+            Result.success(finalBitmap)
         } catch (e: Throwable) {
             Result.failure(Exception(e.message, e))
         }
