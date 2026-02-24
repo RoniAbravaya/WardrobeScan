@@ -104,13 +104,19 @@ fun ScanScreen(
 
     LaunchedEffect(Unit) {
         val needed = buildList {
-            add(Manifest.permission.CAMERA)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-                add(Manifest.permission.READ_MEDIA_IMAGES)
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+                    != PackageManager.PERMISSION_GRANTED)
+                add(Manifest.permission.CAMERA)
+
+            val mediaPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                Manifest.permission.READ_MEDIA_IMAGES
             else
-                add(Manifest.permission.READ_EXTERNAL_STORAGE)
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            if (ContextCompat.checkSelfPermission(context, mediaPermission)
+                    != PackageManager.PERMISSION_GRANTED)
+                add(mediaPermission)
         }
-        permLauncher.launch(needed.toTypedArray())
+        if (needed.isNotEmpty()) permLauncher.launch(needed.toTypedArray())
     }
 
     if (showPermissionDialog) {
