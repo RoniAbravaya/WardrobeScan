@@ -67,7 +67,7 @@ class StyleProfileRepository @Inject constructor(
                 "marketingOptIn" to optIn,
                 "marketingConsentAt" to Timestamp.now()
             )
-            userDoc(userId).update(update).await()
+            userDoc(userId).set(update, com.google.firebase.firestore.SetOptions.merge()).await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
