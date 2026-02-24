@@ -1,4 +1,5 @@
-const functions = require("firebase-functions");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
@@ -432,27 +433,27 @@ async function computeAndSaveProfile(userId) {
  * @param {string} data.itemId - The Firestore document ID of the clothing item
  * @param {string} data.userId - The user's UID
  */
-exports.refineClothingTags = functions.https.onCall(async (data, context) => {
+exports.refineClothingTags = onCall({ secrets: ["ANTHROPIC_API_KEY"] }, async (request) => {
     // Verify authentication
-    if (!context.auth) {
-        throw new functions.https.HttpsError(
+    if (!request.auth) {
+        throw new HttpsError(
             "unauthenticated",
             "Must be authenticated to refine tags."
         );
     }
 
-    const { itemId, userId } = data;
+    const { itemId, userId } = request.data;
 
     if (!itemId || !userId) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
             "invalid-argument",
             "itemId and userId are required."
         );
     }
 
     // Verify the user owns this item
-    if (context.auth.uid !== userId) {
-        throw new functions.https.HttpsError(
+    if (request.auth.uid !== userId) {
+        throw new HttpsError(
             "permission-denied",
             "Cannot access another user's items."
         );
@@ -469,7 +470,7 @@ exports.refineClothingTags = functions.https.onCall(async (data, context) => {
         const itemDoc = await itemRef.get();
 
         if (!itemDoc.exists) {
-            throw new functions.https.HttpsError("not-found", "Item not found.");
+            throw new HttpsError("not-found", "Item not found.");
         }
 
         const item = itemDoc.data();
@@ -477,7 +478,7 @@ exports.refineClothingTags = functions.https.onCall(async (data, context) => {
         // Choose the best available image: prefer the clean cutout
         const imageUrl = item.cutoutUrl || item.imageUrl;
         if (!imageUrl) {
-            throw new functions.https.HttpsError("failed-precondition", "Item has no image URL.");
+            throw new HttpsError("failed-precondition", "Item has no image URL.");
         }
 
         // Download the image into a buffer
@@ -526,7 +527,7 @@ exports.refineClothingTags = functions.https.onCall(async (data, context) => {
             analysis = JSON.parse(jsonText);
         } catch (parseErr) {
             console.error("Claude response parse failed:", responseText);
-            throw new functions.https.HttpsError("internal", "Failed to parse Claude response.");
+            throw new HttpsError("internal", "Failed to parse Claude response.");
         }
 
         // Build the update — always set material/pattern/style; upgrade category/subcategory
@@ -563,7 +564,7 @@ exports.refineClothingTags = functions.https.onCall(async (data, context) => {
             throw error;
         }
         console.error("Error refining tags:", error);
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
             "internal",
             "Failed to refine tags."
         );
@@ -578,26 +579,28 @@ exports.refineClothingTags = functions.https.onCall(async (data, context) => {
  * Triggered whenever a clothing item is created, updated, or deleted.
  * Recomputes the user's StyleProfile document (with a 5-minute debounce).
  */
-exports.generateStyleProfileOnItem = functions.firestore
-    .document("users/{userId}/items/{itemId}")
-    .onWrite(async (change, context) => {
+exports.generateStyleProfileOnItem = onDocumentWritten(
+    "users/{userId}/items/{itemId}",
+    async (event) => {
         try {
-            await computeAndSaveProfile(context.params.userId);
+            await computeAndSaveProfile(event.params.userId);
         } catch (err) {
             console.error("[generateStyleProfileOnItem] Error:", err);
         }
-    });
+    }
+);
 
 /**
  * Triggered whenever an outfit is created, updated, or deleted.
  * Recomputes the user's StyleProfile document (with a 5-minute debounce).
  */
-exports.generateStyleProfileOnOutfit = functions.firestore
-    .document("users/{userId}/outfits/{outfitId}")
-    .onWrite(async (change, context) => {
+exports.generateStyleProfileOnOutfit = onDocumentWritten(
+    "users/{userId}/outfits/{outfitId}",
+    async (event) => {
         try {
-            await computeAndSaveProfile(context.params.userId);
+            await computeAndSaveProfile(event.params.userId);
         } catch (err) {
             console.error("[generateStyleProfileOnOutfit] Error:", err);
         }
-    });
+    }
+);
