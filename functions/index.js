@@ -484,7 +484,11 @@ exports.refineClothingTags = onCall({ secrets: ["ANTHROPIC_API_KEY"] }, async (r
         // Download the image into a buffer
         const imageBuffer = await downloadUrlToBuffer(imageUrl);
         const base64Image = imageBuffer.toString("base64");
-        const mediaType = (item.cutoutUrl || "").endsWith(".png") ? "image/png" : "image/jpeg";
+        // Detect media type from magic bytes (Firebase Storage URLs have query params
+        // so endsWith(".png") is unreliable — the URL ends with "...&token=xxx" not ".png")
+        const isPng = imageBuffer[0] === 0x89 && imageBuffer[1] === 0x50 &&
+                      imageBuffer[2] === 0x4e && imageBuffer[3] === 0x47;
+        const mediaType = isPng ? "image/png" : "image/jpeg";
 
         // Call Claude Haiku for structured clothing analysis
         const Anthropic = require("@anthropic-ai/sdk");
