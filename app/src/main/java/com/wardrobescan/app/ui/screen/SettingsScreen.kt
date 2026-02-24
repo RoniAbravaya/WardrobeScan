@@ -178,6 +178,24 @@ fun SettingsScreen(
                             Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
                         }
                     )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    ListItem(
+                        headlineContent = { Text("Style Analysis") },
+                        supportingContent = {
+                            Text("Allow WardrobeScan to build a style profile from your wardrobe for personalised features")
+                        },
+                        leadingContent = {
+                            Icon(Icons.Default.Analytics, null, tint = MaterialTheme.colorScheme.primary)
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = state.marketingOptIn == true,
+                                onCheckedChange = { viewModel.setMarketingConsent(it) }
+                            )
+                        }
+                    )
                 }
             }
 

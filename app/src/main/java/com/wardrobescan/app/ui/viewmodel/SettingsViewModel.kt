@@ -10,6 +10,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wardrobescan.app.data.repository.AuthRepository
+import com.wardrobescan.app.data.repository.StyleProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,18 +25,23 @@ data class SettingsUiState(
     val useCelsius: Boolean = true,
     val onboardingComplete: Boolean = false,
     val displayName: String = "",
-    val email: String = ""
+    val email: String = "",
+    /** null = consent prompt not yet shown; true/false = user's explicit choice */
+    val marketingOptIn: Boolean? = null
 )
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     application: Application,
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val styleProfileRepository: StyleProfileRepository
 ) : AndroidViewModel(application) {
 
     companion object {
         val USE_CELSIUS = booleanPreferencesKey("use_celsius")
         val ONBOARDING_COMPLETE = booleanPreferencesKey("onboarding_complete")
+        val MARKETING_CONSENT_PROMPTED = booleanPreferencesKey("marketing_consent_prompted")
+        val MARKETING_OPT_IN = booleanPreferencesKey("marketing_opt_in")
     }
 
     private val dataStore = application.dataStore
@@ -51,11 +57,13 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             val prefs = dataStore.data.first()
             val user = authRepository.currentUser
+            val prompted = prefs[MARKETING_CONSENT_PROMPTED] ?: false
             _uiState.value = SettingsUiState(
                 useCelsius = prefs[USE_CELSIUS] ?: true,
                 onboardingComplete = prefs[ONBOARDING_COMPLETE] ?: false,
                 displayName = user?.displayName ?: "",
-                email = user?.email ?: ""
+                email = user?.email ?: "",
+                marketingOptIn = if (prompted) prefs[MARKETING_OPT_IN] ?: false else null
             )
         }
     }
@@ -76,6 +84,23 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun isOnboardingComplete(): Boolean = _uiState.value.onboardingComplete
+
+    /**
+     * Records the user's marketing consent decision.
+     * Persists locally in DataStore and mirrors to Firestore so the
+     * generateStyleProfile Cloud Function can respect the opt-in gate.
+     */
+    fun setMarketingConsent(optIn: Boolean) {
+        viewModelScope.launch {
+            dataStore.edit {
+                it[MARKETING_CONSENT_PROMPTED] = true
+                it[MARKETING_OPT_IN] = optIn
+            }
+            _uiState.value = _uiState.value.copy(marketingOptIn = optIn)
+            val userId = authRepository.currentUser?.uid ?: return@launch
+            styleProfileRepository.updateConsent(userId, optIn)
+        }
+    }
 
     fun signOut() {
         authRepository.signOut()

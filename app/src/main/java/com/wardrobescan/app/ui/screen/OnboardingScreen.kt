@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -31,8 +32,45 @@ data class OnboardingPage(
 
 @Composable
 fun OnboardingScreen(
-    onComplete: () -> Unit
+    onComplete: () -> Unit,
+    onConsentDecided: (optIn: Boolean) -> Unit = {}
 ) {
+    var showConsentDialog by remember { mutableStateOf(false) }
+
+    if (showConsentDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                // Dismissing without choosing = decline (GDPR-safe)
+                showConsentDialog = false
+                onConsentDecided(false)
+                onComplete()
+            },
+            title = { Text("Style Analysis", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Allow WardrobeScan to analyse your wardrobe to build a style profile " +
+                    "(e.g. your colour preferences, style persona, and wardrobe gaps).\n\n" +
+                    "This data is used only to improve your experience and may be used for " +
+                    "personalised features. You can change this at any time in Settings."
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    showConsentDialog = false
+                    onConsentDecided(true)
+                    onComplete()
+                }) { Text("Allow") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showConsentDialog = false
+                    onConsentDecided(false)
+                    onComplete()
+                }) { Text("No thanks") }
+            }
+        )
+    }
+
     val pages = listOf(
         OnboardingPage(
             title = "Scan Your Wardrobe",
@@ -125,7 +163,7 @@ fun OnboardingScreen(
             exit = fadeOut()
         ) {
             Button(
-                onClick = onComplete,
+                onClick = { showConsentDialog = true },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
@@ -144,7 +182,11 @@ fun OnboardingScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                TextButton(onClick = onComplete) {
+                TextButton(onClick = {
+                    // Skip = no consent, go straight through
+                    onConsentDecided(false)
+                    onComplete()
+                }) {
                     Text("Skip")
                 }
                 FloatingActionButton(
